@@ -280,6 +280,16 @@ class S {
     );
   }
 
+  /// `Citations`
+  String get citations {
+    return Intl.message(
+      'Citations',
+      name: 'citations',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `API`
   String get api {
     return Intl.message(
@@ -1225,6 +1235,16 @@ class S {
     return Intl.message(
       'Clear Data',
       name: 'clear_data',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Cleared Successfully`
+  String get cleared_successfully {
+    return Intl.message(
+      'Cleared Successfully',
+      name: 'cleared_successfully',
       desc: '',
       args: [],
     );

@@ -20,7 +20,9 @@ import "../util.dart";
 import "../config.dart";
 import "../llm/llm.dart";
 import "../gen/l10n.dart";
-import "../markdown/all.dart";
+import "../markdown/util.dart";
+import "../markdown/code.dart";
+import "../markdown/latex.dart";
 import "../markdown/mermaid.dart";
 
 import "dart:async";
@@ -50,7 +52,20 @@ enum MessageRole {
   bool get isAssistant => this == MessageRole.assistant;
 }
 
-typedef MessageImage = ({Uint8List bytes, String base64});
+enum CitationType {
+  web,
+}
+
+typedef MessageImage = ({
+  Uint8List bytes,
+  String base64,
+});
+
+typedef MessageCitation = ({
+  CitationType type,
+  String content,
+  String source,
+});
 
 class MessageItem {
   String text;
@@ -58,6 +73,7 @@ class MessageItem {
   String? model;
   MessageRole role;
   List<MessageImage> images = [];
+  List<MessageCitation> citations = [];
 
   MessageItem({
     required this.role,
@@ -427,7 +443,8 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
   }
 
   Widget _buildToolBar() {
-    final role = widget.message.item.role;
+    final item = widget.message.item;
+    final role = item.role;
 
     return Row(
       mainAxisAlignment:
@@ -458,6 +475,17 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
               padding: EdgeInsets.zero,
             ),
           ),
+          if (item.citations.isNotEmpty)
+            SizedBox(
+              width: 36,
+              height: 26,
+              child: IconButton(
+                icon: const Icon(Icons.find_in_page_outlined),
+                iconSize: 18,
+                onPressed: _citations,
+                padding: EdgeInsets.zero,
+              ),
+            ),
         ],
         SizedBox(
           width: 36,
@@ -493,42 +521,18 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
     );
   }
 
-  Future<void> _tts() async {
-    if (!Current.ttsStatus.isNothing) {
-      ref.read(llmProvider.notifier).stopTts();
-      return;
-    }
-
-    final message = widget.message;
-    final text = message.item.text;
-    if (text.isEmpty) return;
-
-    final tts = Config.tts;
-    final ttsOk = tts.api != null && tts.model != null && tts.voice != null;
-
-    if (!ttsOk) {
-      Util.showSnackBar(
-        context: context,
-        content: Text(S.of(context).setup_tts_first),
-      );
-      return;
-    }
-
-    final error = await ref.read(llmProvider.notifier).tts(message);
-    if (error != null && mounted) {
-      Dialogs.error(context: context, error: error);
-    }
-  }
-
-  void _copy() {
-    Util.copyText(context: context, text: widget.message.item.text);
-  }
-
   void _edit() {
     InputWidget.unFocus();
     Navigator.of(context).push(MaterialPageRoute(
       builder: (context) => _MessageEditor(message: widget.message),
     ));
+  }
+
+  void _copy() {
+    Util.copyText(
+      context: context,
+      text: widget.message.item.text,
+    );
   }
 
   void _delete() {
@@ -581,6 +585,154 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
     );
   }
 
+  void _citations() {
+    InputWidget.unFocus();
+    final citations = widget.message.item.citations;
+
+    void onTap(MessageCitation citation) {
+      switch (citation.type) {
+        case CitationType.web:
+          Dialogs.openLink(
+            context: context,
+            link: citation.source,
+          );
+          break;
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      scrollControlDisabledMaxHeightRatio: 0.7,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DialogHeader(title: S.of(context).citations),
+          const Divider(height: 1),
+          Flexible(
+            child: ListView.separated(
+              itemCount: citations.length,
+              itemBuilder: (context, index) {
+                final citation = citations[index];
+                final content = citation.content;
+                final source = citation.source;
+
+                return Card.filled(
+                  margin: EdgeInsets.zero,
+                  color: Theme.of(context).colorScheme.surfaceContainer,
+                  child: ListTile(
+                    title: Text(
+                      source,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      content,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => onTap(citation),
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                );
+              },
+              padding: const EdgeInsets.all(12),
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _longPress() {
+    InputWidget.unFocus();
+
+    void invoke(VoidCallback func) {
+      Navigator.of(context).pop();
+      func();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const DragHandle(),
+            ListTile(
+              minTileHeight: 48,
+              shape: const StadiumBorder(),
+              title: Text(S.of(context).edit),
+              leading: const Icon(Icons.edit_outlined),
+              onTap: () => invoke(_edit),
+            ),
+            ListTile(
+              minTileHeight: 48,
+              shape: StadiumBorder(),
+              title: Text(S.of(context).copy),
+              leading: const Icon(Icons.copy_all),
+              onTap: () => invoke(_copy),
+            ),
+            ListTile(
+              minTileHeight: 48,
+              shape: const StadiumBorder(),
+              title: Text(S.of(context).delete),
+              leading: const Icon(Icons.delete_outlined),
+              onTap: () => invoke(_delete),
+            ),
+            ListTile(
+              minTileHeight: 48,
+              shape: const StadiumBorder(),
+              title: Text(S.of(context).source),
+              leading: const Icon(Icons.code_outlined),
+              onTap: () => invoke(_source),
+            ),
+            if (widget.message.item.citations.isNotEmpty)
+              ListTile(
+                minTileHeight: 48,
+                shape: const StadiumBorder(),
+                title: Text(S.of(context).citations),
+                leading: const Icon(Icons.find_in_page_outlined),
+                onTap: () => invoke(_citations),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _tts() async {
+    if (!Current.ttsStatus.isNothing) {
+      ref.read(llmProvider.notifier).stopTts();
+      return;
+    }
+
+    final message = widget.message;
+    final text = message.item.text;
+    if (text.isEmpty) return;
+
+    final tts = Config.tts;
+    final ttsOk = tts.api != null && tts.model != null && tts.voice != null;
+
+    if (!ttsOk) {
+      Util.showSnackBar(
+        context: context,
+        content: Text(S.of(context).setup_tts_first),
+      );
+      return;
+    }
+
+    final error = await ref.read(llmProvider.notifier).tts(message);
+    if (error != null && mounted) {
+      Dialogs.error(context: context, error: error);
+    }
+  }
+
   Future<void> _reanswer() async {
     if (!Current.chatStatus.isNothing) {
       ref.read(llmProvider.notifier).stopChat();
@@ -604,70 +756,6 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
     }
 
     Current.save();
-  }
-
-  Future<void> _longPress() async {
-    InputWidget.unFocus();
-
-    final event = await showModalBottomSheet<int>(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const DragHandle(),
-            ListTile(
-              minTileHeight: 48,
-              shape: StadiumBorder(),
-              title: Text(S.of(context).copy),
-              leading: const Icon(Icons.copy_all),
-              onTap: () => Navigator.pop(context, 1),
-            ),
-            ListTile(
-              minTileHeight: 48,
-              shape: const StadiumBorder(),
-              title: Text(S.of(context).edit),
-              leading: const Icon(Icons.edit_outlined),
-              onTap: () => Navigator.pop(context, 2),
-            ),
-            ListTile(
-              minTileHeight: 48,
-              shape: const StadiumBorder(),
-              title: Text(S.of(context).source),
-              leading: const Icon(Icons.code_outlined),
-              onTap: () => Navigator.pop(context, 3),
-            ),
-            ListTile(
-              minTileHeight: 48,
-              shape: const StadiumBorder(),
-              title: Text(S.of(context).delete),
-              leading: const Icon(Icons.delete_outlined),
-              onTap: () => Navigator.pop(context, 4),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (event == null || !context.mounted) return;
-
-    switch (event) {
-      case 1:
-        _copy();
-        break;
-
-      case 2:
-        _edit();
-        break;
-
-      case 3:
-        _source();
-        break;
-
-      case 4:
-        _delete();
-        break;
-    }
   }
 }
 

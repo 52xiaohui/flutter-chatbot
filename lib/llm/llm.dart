@@ -193,22 +193,17 @@ class LlmNotifier extends AutoDisposeNotifier<void> {
 
   Future<PromptValue> _buildContext(List<Message> messages) async {
     final context = <ChatMessage>[];
-    final items = <MessageItem>[
-      for (final it in messages) it.item,
-    ];
     final system = Current.systemPrompts;
+    final items = messages.map((it) => it.item).toList();
 
-    if (items.last.role.isAssistant) {
-      items.removeLast();
-    }
+    if (items.last.role.isAssistant) items.removeLast();
 
     if (Preferences.search && !Preferences.googleSearch) {
       items.last = await _buildWebContext(items.last);
+      messages.last.item.citations = items.last.citations;
     }
 
-    if (system != null) {
-      context.add(ChatMessage.system(system));
-    }
+    if (system != null) context.add(ChatMessage.system(system));
 
     for (final item in items) {
       switch (item.role) {
@@ -261,6 +256,7 @@ class LlmNotifier extends AutoDisposeNotifier<void> {
 
       final apiUrl = api.url;
       final apiKey = api.key;
+      final apiType = api.type;
       final model = vector.model!;
       final dimensions = vector.dimensions;
       final batchSize = vector.batchSize ?? 64;
@@ -273,15 +269,36 @@ class LlmNotifier extends AutoDisposeNotifier<void> {
         chunkSize: chunkSize,
         chunkOverlap: chunkOverlap,
       );
+
+      _chatClient = switch (apiType) {
+        "google" => _GoogleClient(
+            baseUrl: apiUrl,
+            enableSearch: false,
+          ),
+        _ => _chatClient,
+      };
+
+      final embeddings = switch (apiType) {
+        "google" => GoogleGenerativeAIEmbeddings(
+            model: model,
+            apiKey: apiKey,
+            baseUrl: apiUrl,
+            client: _chatClient,
+            batchSize: batchSize,
+            dimensions: dimensions,
+          ),
+        _ => OpenAIEmbeddings(
+            model: model,
+            apiKey: apiKey,
+            baseUrl: apiUrl,
+            client: _chatClient,
+            batchSize: batchSize,
+            dimensions: dimensions,
+          ),
+      };
+
       final vectorStore = MemoryVectorStore(
-        embeddings: OpenAIEmbeddings(
-          model: model,
-          apiKey: apiKey,
-          baseUrl: apiUrl,
-          client: _chatClient,
-          batchSize: batchSize,
-          dimensions: dimensions,
-        ),
+        embeddings: embeddings,
       );
 
       docs = await Isolate.run(() => splitter.splitDocuments(docs));
@@ -314,10 +331,20 @@ You need to answer the user's question based on the above content:
       "text": text,
     });
 
-    return MessageItem(
+    final item = MessageItem(
       role: MessageRole.user,
       text: context,
     );
+
+    for (final doc in docs) {
+      item.citations.add((
+        type: CitationType.web,
+        content: doc.pageContent,
+        source: doc.metadata["source"],
+      ));
+    }
+
+    return item;
   }
 
   Future<List<String>> _getWebPageUrls(String query, int n) async {
