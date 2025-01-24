@@ -1,13 +1,20 @@
 plugins {
-    id "kotlin-android"
     id "com.android.application"
+    id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+// 使用 try-catch 块来处理文件可能不存在的情况，这样可以提供更友好的错误信息
+try {
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    } else {
+        println "Warning: key.properties file not found. Release builds will not be signed."
+    }
+} catch (Exception e) {
+    println "Error loading key.properties: ${e.getMessage()}"
 }
 
 android {
@@ -20,31 +27,39 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17
+        jvmTarget = '17' // 使用字符串形式更常见，与 compileOptions 保持一致
     }
 
     defaultConfig {
+        applicationId = "cc.arthur63.chatbot"
         minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        targetSdk = flutter.targetSdkVersion
-        applicationId = "cc.arthur63.chatbot"
     }
 
     signingConfigs {
         release {
-            keyAlias keystoreProperties["keyAlias"]
-            keyPassword keystoreProperties["keyPassword"]
-            storePassword keystoreProperties["storePassword"]
-            storeFile keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
+            // 只有当 key.properties 文件存在且已加载时才配置签名
+            if (keystorePropertiesFile.exists() && keystoreProperties.size() > 0) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
         }
     }
 
     buildTypes {
         release {
+            // 启用代码混淆以减小 APK 大小并提高安全性
             minifyEnabled true
+            // 启用资源缩减以移除未使用的资源
             shrinkResources true
+            // 仅当 signingConfigs.release 配置了签名信息时才应用签名
             signingConfig signingConfigs.release
+            // 使用 ProGuard 或 R8 进行代码混淆（这里以 ProGuard 为例）
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' 
         }
     }
 }
