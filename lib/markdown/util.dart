@@ -14,6 +14,7 @@
 // along with ChatBot. If not, see <https://www.gnu.org/licenses/>.
 
 import "latex.dart";
+import "mermaid.dart";
 
 import "package:markdown/markdown.dart";
 import "package:flutter/material.dart" hide Text, Element;
@@ -23,6 +24,7 @@ import "package:flutter_highlighter/themes/atom-one-light.dart";
 final mdExtensionSet = ExtensionSet(
   <BlockSyntax>[
     LatexBlockSyntax(),
+    MermaidBlockSyntax(),
     const TableSyntax(),
     const FootnoteDefSyntax(),
     const FencedCodeBlockSyntax(),

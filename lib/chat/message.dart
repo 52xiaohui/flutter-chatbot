@@ -21,6 +21,7 @@ import "../config.dart";
 import "../llm/llm.dart";
 import "../gen/l10n.dart";
 import "../markdown/all.dart";
+import "../markdown/mermaid.dart";
 
 import "dart:async";
 import "dart:convert";
@@ -220,28 +221,64 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
                 borderRadius: const BorderRadius.all(Radius.circular(12)),
                 onTap: () async {
                   InputWidget.unFocus();
-
-                  final result = await showDialog<bool>(
+                  showDialog(
                     context: context,
-                    builder: (context) => AlertDialog(
-                      title: Text(S.of(context).delete_image),
-                      content: Text(S.of(context).ensure_delete_image),
-                      actions: [
-                        TextButton(
-                          onPressed: Navigator.of(context).pop,
-                          child: Text(S.of(context).cancel),
+                    builder: (context) => Dialog.fullscreen(
+                      child: Scaffold(
+                        appBar: AppBar(
+                          leading: IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                          title: const Text('图片预览'),
+                          actions: [
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                final result = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text(S.of(context).delete_image),
+                                    content:
+                                        Text(S.of(context).ensure_delete_image),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: Navigator.of(context).pop,
+                                        child: Text(S.of(context).cancel),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: Text(S.of(context).delete),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (!(result ?? false)) return;
+
+                                setState(() => item.images.remove(image));
+                                Current.save();
+                                Navigator.of(context).pop(); // 关闭预览
+                              },
+                            ),
+                          ],
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(true),
-                          child: Text(S.of(context).delete),
+                        body: Center(
+                          child: InteractiveViewer(
+                            maxScale: 5.0,
+                            child: SizedBox(
+                              width: MediaQuery.of(context).size.width,
+                              height: MediaQuery.of(context).size.height,
+                              child: Image.memory(
+                                image.bytes,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
                         ),
-                      ],
+                      ),
                     ),
                   );
-                  if (!(result ?? false)) return;
-
-                  setState(() => item.images.remove(image));
-                  Current.save();
                 },
               ),
             ),
@@ -369,6 +406,7 @@ class _MessageWidgetState extends ConsumerState<MessageWidget> {
                   builders: {
                     "pre": CodeBlockBuilder(context: context),
                     "latex": LatexElementBuilder(textScaleFactor: 1.2),
+                    "mermaid": MermaidElementBuilder(context: context),
                   },
                   styleSheet: markdownStyleSheet,
                   styleSheetTheme: MarkdownStyleSheetBaseTheme.material,
@@ -766,6 +804,7 @@ class MessageView extends StatelessWidget {
         builders: {
           "pre": CodeBlockBuilder2(context: context),
           "latex": LatexElementBuilder2(textScaleFactor: 1.2),
+          "mermaid": MermaidElementBuilder(context: context),
         },
         styleSheet: markdownStyleSheet,
         styleSheetTheme: MarkdownStyleSheetBaseTheme.material,
